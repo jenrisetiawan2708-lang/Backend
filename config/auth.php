@@ -3,16 +3,16 @@
 return [
 
     'defaults' => [
-        'guard'     => 'sanctum',
+        'guard'     => 'web',
         'passwords' => 'penggunas',
     ],
 
     'guards' => [
         'web' => [
             'driver'   => 'session',
-            'provider' => 'users',
+            'provider' => 'penggunas',
         ],
-        'sanctum' => [
+        'api' => [
             'driver'   => 'sanctum',
             'provider' => 'penggunas',
         ],
@@ -30,14 +30,14 @@ return [
     ],
 
     'passwords' => [
-        'users' => [
-            'provider' => 'users',
+        'penggunas' => [
+            'provider' => 'penggunas',
             'table'    => 'password_reset_tokens',
             'expire'   => 60,
             'throttle' => 60,
         ],
-        'penggunas' => [
-            'provider' => 'penggunas',
+        'users' => [
+            'provider' => 'users',
             'table'    => 'password_reset_tokens',
             'expire'   => 60,
             'throttle' => 60,
