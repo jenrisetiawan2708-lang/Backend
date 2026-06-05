@@ -89,13 +89,20 @@ class PembayaranController extends Controller
         if ($request->status === 'Valid') {
             $pembayaran->tagihan->update(['status_tagihan' => 'Lunas']);
 
-            // Notifikasi ke penghuni
+            // Aktifkan kembali sewa & kamar jika sebelumnya non-aktif (selesai)
             $sewa = $pembayaran->tagihan->sewaKamar;
+            if ($sewa && $sewa->status_sewa === 'selesai') {
+                $sewa->update(['status_sewa' => 'aktif', 'tanggal_keluar' => null]);
+                \App\Models\Kamar::where('id_kamar', $sewa->id_kamar)
+                    ->update(['status_kamar' => 'terisi']);
+            }
+
+            // Notifikasi ke penghuni
             if ($sewa) {
                 Notifikasi::create([
                     'id_pengguna'   => $sewa->id_pengguna,
                     'id_tagihan'    => $pembayaran->id_tagihan,
-                    'pesan'         => 'Pembayaran Anda telah divalidasi dan tagihan dinyatakan LUNAS.',
+                    'pesan'         => 'Pembayaran Anda telah divalidasi dan tagihan dinyatakan LUNAS. Status penghuni kembali Aktif.',
                     'tanggal_kirim' => now(),
                     'status_baca'   => 'Belum Dibaca',
                 ]);

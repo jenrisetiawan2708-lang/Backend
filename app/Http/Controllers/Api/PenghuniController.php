@@ -84,16 +84,70 @@ class PenghuniController extends Controller
             'email'    => 'sometimes|email|unique:pengguna,email,' . $id . ',id_pengguna',
             'username' => 'sometimes|string|max:100|unique:pengguna,username,' . $id . ',id_pengguna',
             'password' => 'sometimes|string|min:8',
+            'id_kamar' => 'sometimes|nullable|integer|exists:kamar,id_kamar',
+            'status'   => 'sometimes|in:aktif,non-aktif',
         ]);
 
+        // Map frontend status ke nilai DB: 'non-aktif' -> 'selesai', 'aktif' -> 'aktif'
+        $statusSewa = $request->status === 'non-aktif' ? 'selesai' : 'aktif';
+
+        // Update data pengguna dasar
         $data = $request->only(['nama', 'email', 'username']);
         if ($request->has('password')) {
             $data['password'] = Hash::make($request->password);
         }
+        if (!empty($data)) {
+            $penghuni->update($data);
+        }
 
-        $penghuni->update($data);
+        // Update kamar & status sewa jika dikirim
+        if ($request->has('id_kamar') || $request->has('status')) {
+            $sewaLama = SewaKamar::where('id_pengguna', $id)->where('status_sewa', 'aktif')->first();
+            $idKamarBaru = $request->has('id_kamar') ? $request->id_kamar : ($sewaLama?->id_kamar);
+            $statusBaru  = $request->has('status') ? $statusSewa : 'aktif';
 
-        return response()->json(['success' => true, 'message' => 'Data penghuni diperbarui.', 'data' => $this->formatPenghuni($penghuni)]);
+            if ($sewaLama) {
+                $kamarBerubah = $idKamarBaru && $idKamarBaru != $sewaLama->id_kamar;
+
+                if ($kamarBerubah) {
+                    // Kosongkan kamar lama
+                    Kamar::where('id_kamar', $sewaLama->id_kamar)->update(['status_kamar' => 'kosong']);
+                    // Selesaikan sewa lama
+                    $sewaLama->update(['status_sewa' => 'selesai', 'tanggal_keluar' => now()->toDateString()]);
+                    // Buat sewa baru
+                    SewaKamar::create([
+                        'id_pengguna'   => $id,
+                        'id_kamar'      => $idKamarBaru,
+                        'tanggal_masuk' => now()->toDateString(),
+                        'status_sewa'   => $statusBaru,
+                    ]);
+                    // Tandai kamar baru terisi
+                    Kamar::where('id_kamar', $idKamarBaru)->update(['status_kamar' => 'terisi']);
+                } else {
+                    // Kamar sama, hanya update status sewa
+                    $sewaLama->update(['status_sewa' => $statusBaru]);
+                    // Sinkron status kamar: aktif -> terisi, selesai -> kosong
+                    if ($idKamarBaru) {
+                        Kamar::where('id_kamar', $idKamarBaru)->update([
+                            'status_kamar' => $statusBaru === 'aktif' ? 'terisi' : 'kosong',
+                        ]);
+                    }
+                }
+            } else {
+                // Belum punya sewa aktif — buat sewa baru jika ada kamar dipilih
+                if ($idKamarBaru) {
+                    SewaKamar::create([
+                        'id_pengguna'   => $id,
+                        'id_kamar'      => $idKamarBaru,
+                        'tanggal_masuk' => now()->toDateString(),
+                        'status_sewa'   => $statusBaru,
+                    ]);
+                    Kamar::where('id_kamar', $idKamarBaru)->update(['status_kamar' => 'terisi']);
+                }
+            }
+        }
+
+        return response()->json(['success' => true, 'message' => 'Data penghuni diperbarui.', 'data' => $this->formatPenghuni($penghuni->load('sewaKamar.kamar'))]);
     }
 
     // DELETE /api/penghuni/{id}  (admin: nonaktifkan)
@@ -133,6 +187,7 @@ class PenghuniController extends Controller
             'username'    => $p->username,
             'role'        => $p->role,
             'kamar'       => $sewaAktif ? [
+                'id'            => $sewaAktif->kamar?->id_kamar,
                 'id_sewa'       => $sewaAktif->id_sewa,
                 'nomor_kamar'   => $sewaAktif->kamar?->nomor_kamar,
                 'harga'         => $sewaAktif->kamar?->harga,

@@ -141,6 +141,13 @@ class MidtransController extends Controller
                 'status_validasi'    => 'Valid',
             ]);
 
+            // Aktifkan kembali sewa & kamar jika sebelumnya non-aktif
+            if ($tagihan->sewaKamar && $tagihan->sewaKamar->status_sewa === 'selesai') {
+                $tagihan->sewaKamar->update(['status_sewa' => 'aktif', 'tanggal_keluar' => null]);
+                \App\Models\Kamar::where('id_kamar', $tagihan->sewaKamar->id_kamar)
+                    ->update(['status_kamar' => 'terisi']);
+            }
+
             // Notifikasi ke penghuni
             if ($tagihan->sewaKamar) {
                 Notifikasi::create([
